@@ -1,0 +1,165 @@
+from aiogram import Router, F, types
+from aiogram.filters import Command
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from django.core.exceptions import ObjectDoesNotExist
+
+# Импортируем модели (Джанго уже будет настроен в главном файле)
+from shop.models import Product, News, Order, TelegramUser, CartItem
+
+# Создаем Роутер (это "отдел" по работе с пользователями)
+router = Router()
+
+@router.message(Command("start"))
+async def cmd_start(message: types.Message):
+    user, created = TelegramUser.objects.get_or_create(
+        chat_id=message.chat.id,
+        defaults={'username': message.from_user.username}
+    )
+    # 👇 ДОБАВИЛ КНОПКУ "КОРЗИНА"
+    kb = [
+        [KeyboardButton(text="Каталог"), KeyboardButton(text="🛒 Корзина")],
+        [KeyboardButton(text="👤 Профиль")]
+    ]
+    keyboard = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+    if created:
+        await message.answer(f"Добро пожаловать 👇", reply_markup=keyboard)
+    else:
+        await message.answer(f"С возвращением 👇", reply_markup=keyboard)
+
+
+@router.message(F.text == "Каталог")
+@router.message(Command("shop"))
+async def cmd_shop(message: types.Message):
+    products = Product.objects.all()
+
+    if not products:
+        await message.answer("Магазин пуст")
+        return
+
+    for product in products:
+        text = (
+            f"<b>{product.name}</b>\n"
+            f"💰 Цена: {product.price}\n"
+            f"📜 {product.description}\n"
+        )
+        my_button = InlineKeyboardButton(text="Купить", callback_data=f"buy_{product.id}")
+        my_keyboard = InlineKeyboardMarkup(inline_keyboard=[[my_button]])
+
+        if product.image:
+            photo_file = FSInputFile(product.image.path)
+            await message.answer_photo(photo_file, caption=text, parse_mode="HTML", reply_markup=my_keyboard)
+        else:
+            await message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
+
+
+@router.message(F.text == "👤 Профиль")
+async def cmd_profile(message: types.Message):
+    user_id = message.chat.id
+    orders = Order.objects.filter(user_id=user_id)
+
+    if not orders.exists():
+        await message.answer(f"У вас пока нет заказов. Самое время что-то купить! 🛍")
+        return
+
+    text = "📋 **Ваши последние заказы:**\n\n"
+    for order in orders:
+        text += f"📦 **{order.product.name}**\n"
+        # Проверь, как у тебя точно называется поле (time или created_at)
+        text += f"📅 Дата: {order.time.strftime('%Y-%m-%d')}\n"
+        text += f"🆔 Номер заказа: {order.id}\n"
+        text += "------------------\n"
+
+    await message.answer(text, parse_mode="Markdown")
+
+@router.message(F.text == "🛒 Корзина")
+async def cmd_cart(message: types.Message):
+    # 1. Находим юзера (правильно, через chat_id)
+    try:
+        user = TelegramUser.objects.get(chat_id=message.chat.id)
+    except ObjectDoesNotExist:
+        await message.answer("Сначала нажмите /start")
+        return
+
+    # 2. Достаем товары (используем найденный объект user)
+    cart_items = CartItem.objects.filter(user=user)
+
+    if not cart_items.exists():
+        await message.answer("Корзина пуста 🕸")
+        return
+
+    text = "🛒 **Ваша корзина:**\n\n"
+    total_price = 0
+
+    for item in cart_items:
+        text += f"🔹 {item.product.name} — {item.product.price} монет\n"
+        total_price += item.product.price  # Накапливаем сумму отдельно
+
+    text += f"\n💰 **Итого: {total_price} монет**"
+
+    buttons =[
+        [InlineKeyboardButton(text="✅ Оформить", callback_data="checkout")],
+        [InlineKeyboardButton(text="🗑 Очистить", callback_data="clear")],
+    ]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+
+@router.callback_query(F.data == "checkout")
+async def process_checkout(callback: types.CallbackQuery):
+    user = TelegramUser.objects.get(chat_id=callback.from_user.id)
+    cart_items = CartItem.objects.filter(user=user)
+
+    if not cart_items.exists():
+        await callback.answer("Корзина уже пуста!")
+        return
+
+    # Переносим в историю заказов
+    for item in cart_items:
+        Order.objects.create(
+            user_id=user.chat_id,
+            product=item.product
+        )
+
+    # Очищаем корзину
+    cart_items.delete()
+    await callback.message.edit_text(f"✅ Заказ оформлен! Товары теперь в Профиле.")
+    await callback.answer()
+
+@router.callback_query(F.data == "clear")
+async def process_clear(callback: types.CallbackQuery):
+    # 1. Находим юзера
+    user = TelegramUser.objects.get(chat_id=callback.from_user.id)
+
+    # 2. Удаляем товары этого юзера
+    CartItem.objects.filter(user=user).delete()
+
+    # 3. Меняем текст сообщения, чтобы юзер видел результат
+    await callback.message.edit_text("Корзина очищена! 🗑")
+    # Не забываем отвечать на колбэк, чтобы кнопка не "крутилась"
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("buy_"))
+async def cmd_buy(callback: types.CallbackQuery):
+    product_id = callback.data.split("_")[1]
+
+    try:
+        product = Product.objects.get(id=product_id)
+        user = TelegramUser.objects.get(chat_id=callback.from_user.id)
+    except ObjectDoesNotExist:
+        await callback.answer("Ошибка: Товар или пользователь не найден")
+        return
+
+    CartItem.objects.create(user=user, product=product)
+
+    await callback.answer(f"Добавлено: {product.name}")
+    await callback.message.answer(f"✅ Товар <b>{product.name}</b> добавлен в корзину!", parse_mode="HTML")
+
+@router.message(Command("news"))
+async def cmd_news(message: types.Message):
+    news_list = News.objects.all()
+    if not news_list:
+        await message.answer("Нет новостей")
+        return
+    for news in news_list:
+        text = f"<b>{news.title}:</b>\t{news.text}"
+        await message.answer(text, parse_mode="HTML")
