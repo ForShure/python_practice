@@ -1,78 +1,72 @@
 import asyncio
 import logging
-import random
-import requests
-import sqlite3
-from bs4 import BeautifulSoup
+import os
+import sys
+from dotenv import load_dotenv
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
+# ---------------------------------------------------------
+# ЭТАП 1: Настройка Django (Связываем бота с базой данных)
+# ---------------------------------------------------------
+sys.path.append(os.path.join(os.getcwd(), 'web'))
 
-logging.basicConfig(level=logging.INFO)
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web.settings")
 
-bot = Bot(token='123')
-dp = Dispatcher()
+# 👇👇👇 ДОБАВЬ ВОТ ЭТУ СТРОЧКУ СЮДА 👇👇👇
+os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
 
-def db_start():
-    connect = sqlite3.connect('test.db')
-    cursor = connect.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)")
-    connect.commit()
-    cursor.close()
-    connect.close()
+import django
+django.setup()
 
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    connect = sqlite3.connect('test.db')
-    cursor = connect.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (id, name) VALUES (?, ?)", (message.from_user.id, message.from_user.first_name))
-    connect.commit()
-    print(f"Сохранил юзера: {message.from_user.first_name}")
-    cursor.close()
-    connect.close()
-    await message.answer(f"Салам алейкум, браза, напиши /quote")
+# Добавляем папку web в пути, чтобы Python её видел
+sys.path.append(os.path.join(os.getcwd(), 'web'))
 
-@dp.message (Command('quote'))
-async def cmd_quote(message: types.Message):
-    await message.answer(f"В поисках цитаты")
+# Указываем, где лежат настройки Django
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web.settings")
 
-    url = "http://quotes.toscrape.com/"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
+# Запускаем Django (чтобы заработали модели Order, Product и т.д.)
+import django
 
-    quotes = soup.find_all("div", class_="quote")
+django.setup()
 
-    random_quote = random.choice(quotes)
-
-    text = random_quote.find("span", class_="text").text
-    author = random_quote.find("small", class_="author").text
-
-    await message.answer(f"{text} - {author}")
-
-@dp.message(Command("users"))
-async def cmd_users(message: types.Message):
-    connect = sqlite3.connect('test.db')
-    cursor = connect.cursor()
-    cursor.execute("SELECT * FROM users")
-    users = cursor.fetchall()
-    s = "Список юзеров:\n"
-    for user in users:
-        s += f"{user[0]} - {user[1]}\n"
-    cursor.close()
-    connect.close()
-    await message.answer(s)
+# ---------------------------------------------------------
+# ЭТАП 2: Запуск бота (Только ПОСЛЕ запуска Django)
+# ---------------------------------------------------------
+from aiogram import Bot, Dispatcher
+# Импортируем наш файл с логикой (где корзина, адрес и т.д.)
+from bot.handlers.user_commands import router
 
 
 async def main():
+    # 1. Загружаем секретные данные из .env
+    # Мы ищем .env внутри папки web (или в корне, скрипт поищет везде)
+    load_dotenv(os.path.join(os.getcwd(), 'web', '.env'))
+
+    # 2. Достаем токен
+    token = os.getenv("BOT_TOKEN")
+
+    if not token:
+        print("❌ ОШИБКА: Токен не найден! Проверь, что в .env написано BOT_TOKEN=твои_цифры")
+        return
+
+    # 3. Создаем бота
+    bot = Bot(token=token)
+    dp = Dispatcher()
+
+    # 4. Подключаем "мозги" (наш роутер с командами)
+    dp.include_router(router)
+
+    # 5. Удаляем старые обновления (чтобы бот не отвечал на то, что было, пока он спал)
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    print("🚀 Бот запущен! Можно писать...")
     await dp.start_polling(bot)
 
+
 if __name__ == '__main__':
-    db_start()
-    asyncio.run(main())
-
-
-
-
-
-
+    # Включаем логирование, чтобы видеть ошибки в консоли
+    logging.basicConfig(level=logging.INFO)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Бот выключен")
 

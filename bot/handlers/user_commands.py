@@ -2,12 +2,17 @@ from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from django.core.exceptions import ObjectDoesNotExist
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
 
 # Импортируем модели (Джанго уже будет настроен в главном файле)
 from shop.models import Product, News, Order, TelegramUser, CartItem
 
 # Создаем Роутер (это "отдел" по работе с пользователями)
 router = Router()
+
+class OrderState(StatesGroup):
+    waiting_for_address = State()
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -104,25 +109,16 @@ async def cmd_cart(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
 
+
 @router.callback_query(F.data == "checkout")
-async def process_checkout(callback: types.CallbackQuery):
-    user = TelegramUser.objects.get(chat_id=callback.from_user.id)
-    cart_items = CartItem.objects.filter(user=user)
+async def start_checkout_process(callback: types.CallbackQuery, state: FSMContext):
+    # Включаем режим ожидания
+    await state.set_state(OrderState.waiting_for_address)
 
-    if not cart_items.exists():
-        await callback.answer("Корзина уже пуста!")
-        return
+    # Спрашиваем адрес
+    await callback.message.answer("🚚 Напишите адрес доставки текстом:")
 
-    # Переносим в историю заказов
-    for item in cart_items:
-        Order.objects.create(
-            user_id=user.chat_id,
-            product=item.product
-        )
-
-    # Очищаем корзину
-    cart_items.delete()
-    await callback.message.edit_text(f"✅ Заказ оформлен! Товары теперь в Профиле.")
+    # Отвечаем на нажатие кнопки
     await callback.answer()
 
 @router.callback_query(F.data == "clear")
@@ -153,6 +149,35 @@ async def cmd_buy(callback: types.CallbackQuery):
 
     await callback.answer(f"Добавлено: {product.name}")
     await callback.message.answer(f"✅ Товар <b>{product.name}</b> добавлен в корзину!", parse_mode="HTML")
+
+
+@router.message(OrderState.waiting_for_address)
+async def process_address(message: types.Message, state: FSMContext):
+    try:
+        await state.clear()
+
+        address = message.text
+        user = TelegramUser.objects.get(chat_id=message.chat.id)
+
+        cart_items = CartItem.objects.filter(user=user)
+        if not cart_items.exists():
+            await message.answer("Корзина пуста! Сначала купите что-нибудь.")
+            return
+
+        total_price = 0
+
+        for item in cart_items:
+
+            Order.objects.create(user_id=user.chat_id, product=item.product)
+            total_price += item.product.price
+
+        cart_items.delete()
+
+        await message.answer(f"✅ Заказ оформлен на адрес: {address}\n💰 Сумма: {total_price}")
+
+    except Exception as e:
+        await message.answer(f"😱 Ошибка в коде:\n{e}")
+        print(f"❌ LOG ERROR: {e}")
 
 @router.message(Command("news"))
 async def cmd_news(message: types.Message):
