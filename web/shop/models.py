@@ -6,13 +6,21 @@ class Product(models.Model):
     description = models.TextField()                                        # Описание (длинный текст)
     image = models.ImageField(upload_to='product/', blank=True, null=True)  # Картинка продука (aaaaaaaaaaa)
 
+    class Meta:
+        verbose_name = "Товар"
+        verbose_name_plural = "Товары"
+
     def __str__(self):
         return self.name  # Чтобы в админке писалось название, а не "Product object (1)"
+
 
 class News(models.Model):
     title = models.CharField(max_length=200)    # Название (короткий текст)
     text = models.TextField()                   # Длинный текст, без ограничений
 
+    class Meta:
+        verbose_name = "Новость"
+        verbose_name_plural = "Новости"
     def __str__(self):
         return self.title
 
@@ -21,6 +29,9 @@ class Order(models.Model):
     user_id = models.BigIntegerField()
     time = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        verbose_name = "Заказ"
+        verbose_name_plural = "Заказы"
     def __str__(self):
         return self.product.name
 
@@ -32,7 +43,9 @@ class TelegramUser(models.Model):
     joined_at = models.DateTimeField(auto_now_add=True)
     def __str__(self):
         return f"{self.chat_id} - {self.username}"
-
+    class Meta:
+        verbose_name = "Пользователь"
+        verbose_name_plural = "Пользователи"
 class CartItem(models.Model):
     user = models.ForeignKey(TelegramUser, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)

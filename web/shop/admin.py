@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Product, News, Order, TelegramUser   # Импортируем наш класс
+from shop.models import Product, Order, News, TelegramUser  # Импортируем наш класс
 
 # Говорим админке: "Управляй этой таблицей"
 admin.site.register(Product)

@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # 1. База данных (PostgreSQL)
+  db:
+    image: postgres:15
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+
+  # 2. Сайт (Админка)
+  web:
+    build: .
+    command: python web/manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    restart: always
+
+  # 3. Бот
+  bot:
+    build: .
+    command: python main.py
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+      - db
+    restart: always
+
+# Это хранилище для базы, чтобы данные не стерлись при перезагрузке
+volumes:
+  postgres_data:
