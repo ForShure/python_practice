@@ -40,7 +40,6 @@ async def main():
 def create_admin():
     User = get_user_model()
     if not User.objects.filter(username='admin').exists():
-
         User.objects.create_superuser('admin', 'admin@example.com', 'admin_pass_123')
         print("✅ Суперюзер создан!")
     else:
