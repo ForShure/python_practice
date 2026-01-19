@@ -17,6 +17,8 @@ django.setup()
 # ИМПОРТЫ ПОСЛЕ НАСТРОЙКИ
 from bot.handlers.user_commands import router
 
+from django.contrib.auth import get_user_model
+
 async def main():
     # 1. Загружаем переменные
     load_dotenv(os.path.join(os.getcwd(), 'web', '.env'))
@@ -34,10 +36,24 @@ async def main():
     print("🚀 Бот запущен! Можно писать...")
     await dp.start_polling(bot)
 
+
+def create_admin():
+    User = get_user_model()
+    if not User.objects.filter(username='admin').exists():
+
+        User.objects.create_superuser('admin', 'admin@example.com', 'admin_pass_123')
+        print("✅ Суперюзер создан!")
+    else:
+        print("✅ Суперюзер уже есть.")
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
+
+    # Сначала создаем админа, потом запускаем бота
+    create_admin()
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Бот выключен")
-
