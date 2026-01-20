@@ -48,6 +48,8 @@ async def cmd_shop(message: types.Message):
         await message.answer("Магазин пуст")
         return
 
+    BASE_URL = "https://my-shop-bot-service.onrender.com"
+
     for product in products:
         text = (
             f"<b>{product.name}</b>\n"
@@ -57,15 +59,17 @@ async def cmd_shop(message: types.Message):
         my_button = InlineKeyboardButton(text="Купить", callback_data=f"buy_{product.id}")
         my_keyboard = InlineKeyboardMarkup(inline_keyboard=[[my_button]])
 
-
         if product.image:
-
-            await message.answer_photo(
-                photo=product.image.url,
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=my_keyboard
-            )
+            full_photo_url = f"{BASE_URL}{product.image.url}"
+            try:
+                await message.answer_photo(
+                    photo=full_photo_url,
+                    caption=text,
+                    parse_mode="HTML",
+                    reply_markup=my_keyboard
+                )
+            except Exception as e:
+                await message.answer(f"{text}\n\n(Ошибка фото: {e})", parse_mode="HTML", reply_markup=my_keyboard)
         else:
             await message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
 
