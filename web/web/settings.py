@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import os
 from urllib.parse import urlparse
@@ -10,14 +9,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-4dw+9&-nn@l0w_)+ame6$f$03n%50#$c1se$2w5#6=dan9h+_a')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-# На Render лучше выключать DEBUG, если там есть переменная среды
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['*'] # Разрешаем все хосты для работы в облаке
-
+ALLOWED_HOSTS = ['*']
 
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -25,12 +21,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
     'shop',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', # Для работы стилей на Render
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -58,15 +54,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'web.wsgi.application'
 
-
 # Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
-# Пытаемся взять URL базы из переменной окружения Render
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
-    # Парсим URL вручную, чтобы не зависеть от dj-database-url
     url = urlparse(DATABASE_URL)
     DATABASES = {
         'default': {
@@ -79,7 +70,6 @@ if DATABASE_URL:
         }
     }
 else:
-    # Твои старые настройки для домашнего Docker
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -91,7 +81,6 @@ else:
         }
     }
 
-
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -100,18 +89,25 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-
 # Internationalization
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
+# Папка, куда collectstatic соберет файлы для деплоя
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Настройки для картинок и файлов
+# Настройка WhiteNoise для хранения статики
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+# Настройки для медиа-файлов (картинки товаров)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
