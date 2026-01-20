@@ -42,13 +42,13 @@ async def cmd_start(message: types.Message):
 @router.message(F.text == "Каталог")
 @router.message(Command("shop"))
 async def cmd_shop(message: types.Message):
-
     products = Product.objects.all()
 
     if not products:
         await message.answer("Магазин пуст 🕸")
         return
 
+    # Твой домен на Render (проверь, чтобы совпадал с тем, что в панели Render)
     BASE_URL = "https://my-shop-bot-service.onrender.com"
 
     for product in products:
@@ -57,13 +57,14 @@ async def cmd_shop(message: types.Message):
             f"💰 Цена: {product.price}\n"
             f"📜 {product.description}\n"
         )
-
         my_button = InlineKeyboardButton(text="Купить", callback_data=f"buy_{product.id}")
         my_keyboard = InlineKeyboardMarkup(inline_keyboard=[[my_button]])
 
         if product.image:
+            # Формируем прямую ссылку: Домен + /media/путь_к_картинке
             full_photo_url = f"{BASE_URL}{product.image.url}"
             try:
+                # Отправляем именно ссылку (URL)
                 await message.answer_photo(
                     photo=full_photo_url,
                     caption=text,
@@ -71,14 +72,10 @@ async def cmd_shop(message: types.Message):
                     reply_markup=my_keyboard
                 )
             except Exception as e:
-                await message.answer(
-                    f"{text}\n\n⚠️ <i>Изображение временно недоступно</i>",
-                    parse_mode="HTML",
-                    reply_markup=my_keyboard
-                )
-                print(f"Ошибка отправки фото для {product.name}: {e}")
+                # Если Telegram не смог загрузить фото, отправляем текст, чтобы бот не молчал
+                await message.answer(f"{text}\n\n⚠️ <i>Фото временно недоступно</i>", parse_mode="HTML", reply_markup=my_keyboard)
+                print(f"Ошибка фото: {e}")
         else:
-            # Если у товара в админке вообще нет картинки
             await message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
 
 
