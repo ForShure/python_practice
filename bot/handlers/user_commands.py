@@ -42,10 +42,11 @@ async def cmd_start(message: types.Message):
 @router.message(F.text == "Каталог")
 @router.message(Command("shop"))
 async def cmd_shop(message: types.Message):
+
     products = Product.objects.all()
 
     if not products:
-        await message.answer("Магазин пуст")
+        await message.answer("Магазин пуст 🕸")
         return
 
     BASE_URL = "https://my-shop-bot-service.onrender.com"
@@ -56,6 +57,7 @@ async def cmd_shop(message: types.Message):
             f"💰 Цена: {product.price}\n"
             f"📜 {product.description}\n"
         )
+
         my_button = InlineKeyboardButton(text="Купить", callback_data=f"buy_{product.id}")
         my_keyboard = InlineKeyboardMarkup(inline_keyboard=[[my_button]])
 
@@ -69,8 +71,14 @@ async def cmd_shop(message: types.Message):
                     reply_markup=my_keyboard
                 )
             except Exception as e:
-                await message.answer(f"{text}\n\n(Ошибка фото: {e})", parse_mode="HTML", reply_markup=my_keyboard)
+                await message.answer(
+                    f"{text}\n\n⚠️ <i>Изображение временно недоступно</i>",
+                    parse_mode="HTML",
+                    reply_markup=my_keyboard
+                )
+                print(f"Ошибка отправки фото для {product.name}: {e}")
         else:
+            # Если у товара в админке вообще нет картинки
             await message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
 
 
