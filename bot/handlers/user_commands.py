@@ -4,6 +4,12 @@ from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButto
 from django.core.exceptions import ObjectDoesNotExist
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 
 # Импортируем модели (Джанго уже будет настроен в главном файле)
 from shop.models import Product, News, Order, TelegramUser, CartItem
@@ -154,30 +160,47 @@ async def cmd_buy(callback: types.CallbackQuery):
 @router.message(OrderState.waiting_for_address)
 async def process_address(message: types.Message, state: FSMContext):
     try:
-        await state.clear()
-
         address = message.text
         user = TelegramUser.objects.get(chat_id=message.chat.id)
-
         cart_items = CartItem.objects.filter(user=user)
+
         if not cart_items.exists():
-            await message.answer("Корзина пуста! Сначала купите что-нибудь.")
+            await message.answer("Корзина пуста!")
+            await state.clear()
             return
 
         total_price = 0
+        order_details = "" # Собираем текст для уведомления админа
 
         for item in cart_items:
-
-            Order.objects.create(user_id=user.chat_id, product=item.product)
+            # Создаем заказ в базе С АДРЕСОМ
+            Order.objects.create(
+                user_id=user.chat_id,
+                product=item.product,
+                address=address # Теперь адрес сохранится в Django!
+            )
             total_price += item.product.price
+            order_details += f"- {item.product.name} ({item.product.price} монеток)\n"
 
+        # Очищаем корзину и состояние
         cart_items.delete()
+        await state.clear()
 
-        await message.answer(f"✅ Заказ оформлен на адрес: {address}\n💰 Сумма: {total_price}")
+        # 1. Ответ пользователю
+        await message.answer(f"✅ Заказ оформлен!\n🏠 Адрес: {address}\n💰 Сумма: {total_price}")
+
+        # 2. УВЕДОМЛЕНИЕ АДМИНУ
+        admin_text = (
+            f"🔔 <b>НОВЫЙ ЗАКАЗ!</b>\n\n"
+            f"👤 От: @{message.from_user.username} (ID: {message.chat.id})\n"
+            f"📦 Состав:\n{order_details}\n"
+            f"📍 Адрес: {address}\n"
+            f"💵 Итого: {total_price}"
+        )
+        await message.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode="HTML")
 
     except Exception as e:
-        await message.answer(f"😱 Ошибка в коде:\n{e}")
-        print(f"❌ LOG ERROR: {e}")
+        await message.answer(f"😱 Ошибка: {e}")
 
 @router.message(Command("news"))
 async def cmd_news(message: types.Message):

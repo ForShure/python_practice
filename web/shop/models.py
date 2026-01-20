@@ -28,6 +28,7 @@ class Order(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     user_id = models.BigIntegerField()
     time = models.DateTimeField(auto_now_add=True)
+    address = models.TextField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Заказ"
