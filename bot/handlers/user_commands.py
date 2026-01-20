@@ -57,9 +57,15 @@ async def cmd_shop(message: types.Message):
         my_button = InlineKeyboardButton(text="Купить", callback_data=f"buy_{product.id}")
         my_keyboard = InlineKeyboardMarkup(inline_keyboard=[[my_button]])
 
+
         if product.image:
-            photo_file = FSInputFile(product.image.path)
-            await message.answer_photo(photo_file, caption=text, parse_mode="HTML", reply_markup=my_keyboard)
+
+            await message.answer_photo(
+                photo=product.image.url,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=my_keyboard
+            )
         else:
             await message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
 

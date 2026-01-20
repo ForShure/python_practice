@@ -7,5 +7,7 @@ admin.site.register(News)
 admin.site.register(TelegramUser)
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
+    # Добавляем список полей, которые будут видны в таблице
+    list_display = ('id', 'product', 'user_id', 'time', 'address')
     list_filter = ('time',)
-    search_fields = ('user_id',)
+    search_fields = ('user_id', 'address')
