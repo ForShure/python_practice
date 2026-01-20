@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
+raw_admin_id = os.getenv("ADMIN_ID", "0").strip()
+ADMIN_ID = int(raw_admin_id)
 
 # Импортируем модели (Джанго уже будет настроен в главном файле)
 from shop.models import Product, News, Order, TelegramUser, CartItem
