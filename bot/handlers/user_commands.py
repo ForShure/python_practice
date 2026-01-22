@@ -1,25 +1,35 @@
+import os
 from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from django.core.exceptions import ObjectDoesNotExist
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-import os
 from dotenv import load_dotenv
 
+# Загружаем переменные
 load_dotenv()
 
-raw_admin_id = os.getenv("ADMIN_ID", "0").strip()
-ADMIN_ID = int(raw_admin_id)
+# --- ИСПРАВЛЕНИЕ 1: Надежная загрузка ID ---
+# Считываем как строку, убираем пробелы (.strip)
+raw_id = str(os.getenv("ADMIN_ID", "0")).strip()
 
-# Импортируем модели (Джанго уже будет настроен в главном файле)
+# Проверяем, состоит ли ID только из цифр
+if raw_id.isdigit():
+    ADMIN_ID = int(raw_id)
+else:
+    ADMIN_ID = 0
+    print(f"⚠️ ВНИМАНИЕ: ADMIN_ID ('{raw_id}') некорректен! Уведомления приходить не будут.")
+
+# Импортируем модели
 from shop.models import Product, News, Order, TelegramUser, CartItem
 
-# Создаем Роутер (это "отдел" по работе с пользователями)
 router = Router()
+
 
 class OrderState(StatesGroup):
     waiting_for_address = State()
+
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -27,7 +37,7 @@ async def cmd_start(message: types.Message):
         chat_id=message.chat.id,
         defaults={'username': message.from_user.username}
     )
-    # 👇 ДОБАВИЛ КНОПКУ "КОРЗИНА"
+
     kb = [
         [KeyboardButton(text="Каталог"), KeyboardButton(text="🛒 Корзина")],
         [KeyboardButton(text="👤 Профиль")]
@@ -49,7 +59,7 @@ async def cmd_shop(message: types.Message):
         await message.answer("Магазин пуст 🕸")
         return
 
-    # Твой домен на Render (проверь, чтобы совпадал с тем, что в панели Render)
+    # ВАЖНО: Убедись, что тут твой актуальный адрес на Render
     BASE_URL = "https://my-shop-bot-service.onrender.com"
 
     for product in products:
@@ -62,10 +72,9 @@ async def cmd_shop(message: types.Message):
         my_keyboard = InlineKeyboardMarkup(inline_keyboard=[[my_button]])
 
         if product.image:
-            # Формируем прямую ссылку: Домен + /media/путь_к_картинке
+            # Формируем полную ссылку для Render
             full_photo_url = f"{BASE_URL}{product.image.url}"
             try:
-                # Отправляем именно ссылку (URL)
                 await message.answer_photo(
                     photo=full_photo_url,
                     caption=text,
@@ -73,8 +82,8 @@ async def cmd_shop(message: types.Message):
                     reply_markup=my_keyboard
                 )
             except Exception as e:
-                # Если Telegram не смог загрузить фото, отправляем текст, чтобы бот не молчал
-                await message.answer(f"{text}\n\n⚠️ <i>Фото временно недоступно</i>", parse_mode="HTML", reply_markup=my_keyboard)
+                await message.answer(f"{text}\n\n⚠️ <i>Фото не грузится</i>", parse_mode="HTML",
+                                     reply_markup=my_keyboard)
                 print(f"Ошибка фото: {e}")
         else:
             await message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
@@ -92,23 +101,22 @@ async def cmd_profile(message: types.Message):
     text = "📋 **Ваши последние заказы:**\n\n"
     for order in orders:
         text += f"📦 **{order.product.name}**\n"
-        # Проверь, как у тебя точно называется поле (time или created_at)
+        # Используем time или created_at (как у тебя в модели)
         text += f"📅 Дата: {order.time.strftime('%Y-%m-%d')}\n"
         text += f"🆔 Номер заказа: {order.id}\n"
         text += "------------------\n"
 
     await message.answer(text, parse_mode="Markdown")
 
+
 @router.message(F.text == "🛒 Корзина")
 async def cmd_cart(message: types.Message):
-    # 1. Находим юзера (правильно, через chat_id)
     try:
         user = TelegramUser.objects.get(chat_id=message.chat.id)
     except ObjectDoesNotExist:
         await message.answer("Сначала нажмите /start")
         return
 
-    # 2. Достаем товары (используем найденный объект user)
     cart_items = CartItem.objects.filter(user=user)
 
     if not cart_items.exists():
@@ -120,11 +128,11 @@ async def cmd_cart(message: types.Message):
 
     for item in cart_items:
         text += f"🔹 {item.product.name} — {item.product.price} монет\n"
-        total_price += item.product.price  # Накапливаем сумму отдельно
+        total_price += item.product.price
 
     text += f"\n💰 **Итого: {total_price} монет**"
 
-    buttons =[
+    buttons = [
         [InlineKeyboardButton(text="✅ Оформить", callback_data="checkout")],
         [InlineKeyboardButton(text="🗑 Очистить", callback_data="clear")],
     ]
@@ -134,27 +142,18 @@ async def cmd_cart(message: types.Message):
 
 @router.callback_query(F.data == "checkout")
 async def start_checkout_process(callback: types.CallbackQuery, state: FSMContext):
-    # Включаем режим ожидания
     await state.set_state(OrderState.waiting_for_address)
-
-    # Спрашиваем адрес
     await callback.message.answer("🚚 Напишите адрес доставки текстом:")
-
-    # Отвечаем на нажатие кнопки
     await callback.answer()
+
 
 @router.callback_query(F.data == "clear")
 async def process_clear(callback: types.CallbackQuery):
-    # 1. Находим юзера
     user = TelegramUser.objects.get(chat_id=callback.from_user.id)
-
-    # 2. Удаляем товары этого юзера
     CartItem.objects.filter(user=user).delete()
-
-    # 3. Меняем текст сообщения, чтобы юзер видел результат
     await callback.message.edit_text("Корзина очищена! 🗑")
-    # Не забываем отвечать на колбэк, чтобы кнопка не "крутилась"
     await callback.answer()
+
 
 @router.callback_query(F.data.startswith("buy_"))
 async def cmd_buy(callback: types.CallbackQuery):
@@ -163,14 +162,12 @@ async def cmd_buy(callback: types.CallbackQuery):
     try:
         product = Product.objects.get(id=product_id)
         user = TelegramUser.objects.get(chat_id=callback.from_user.id)
+        CartItem.objects.create(user=user, product=product)
+
+        await callback.answer(f"Добавлено: {product.name}")
+        await callback.message.answer(f"✅ Товар <b>{product.name}</b> добавлен в корзину!", parse_mode="HTML")
     except ObjectDoesNotExist:
         await callback.answer("Ошибка: Товар или пользователь не найден")
-        return
-
-    CartItem.objects.create(user=user, product=product)
-
-    await callback.answer(f"Добавлено: {product.name}")
-    await callback.message.answer(f"✅ Товар <b>{product.name}</b> добавлен в корзину!", parse_mode="HTML")
 
 
 @router.message(OrderState.waiting_for_address)
@@ -186,37 +183,45 @@ async def process_address(message: types.Message, state: FSMContext):
             return
 
         total_price = 0
-        order_details = "" # Собираем текст для уведомления админа
+        order_details = ""
 
         for item in cart_items:
-            # Создаем заказ в базе С АДРЕСОМ
             Order.objects.create(
                 user_id=user.chat_id,
                 product=item.product,
-                address=address # Теперь адрес сохранится в Django!
+                address=address
             )
             total_price += item.product.price
             order_details += f"- {item.product.name} ({item.product.price} монеток)\n"
 
-        # Очищаем корзину и состояние
         cart_items.delete()
         await state.clear()
 
-        # 1. Ответ пользователю
+        # 1. Сначала радуем пользователя
         await message.answer(f"✅ Заказ оформлен!\n🏠 Адрес: {address}\n💰 Сумма: {total_price}")
 
-        # 2. УВЕДОМЛЕНИЕ АДМИНУ
-        admin_text = (
-            f"🔔 <b>НОВЫЙ ЗАКАЗ!</b>\n\n"
-            f"👤 От: @{message.from_user.username} (ID: {message.chat.id})\n"
-            f"📦 Состав:\n{order_details}\n"
-            f"📍 Адрес: {address}\n"
-            f"💵 Итого: {total_price}"
-        )
-        await message.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode="HTML")
+        # 2. --- ИСПРАВЛЕНИЕ 2: Безопасная отправка Админу ---
+        if ADMIN_ID != 0:
+            admin_text = (
+                f"🔔 <b>НОВЫЙ ЗАКАЗ!</b>\n\n"
+                f"👤 От: @{message.from_user.username} (ID: {message.chat.id})\n"
+                f"📦 Состав:\n{order_details}\n"
+                f"📍 Адрес: {address}\n"
+                f"💵 Итого: {total_price}"
+            )
+            try:
+                await message.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode="HTML")
+            except Exception as e_admin:
+                # Если тут ошибка (например, chat not found), бот НЕ упадет, просто напишет в лог
+                print(f"❌ ОШИБКА ОТПРАВКИ АДМИНУ: {e_admin}")
+        else:
+            print("❌ ADMIN_ID не настроен (равен 0), уведомление не отправлено.")
 
     except Exception as e:
-        await message.answer(f"😱 Ошибка: {e}")
+        # Глобальная защита
+        await message.answer(f"😱 Ошибка при оформлении: {e}")
+        print(f"CRITICAL ERROR: {e}")
+
 
 @router.message(Command("news"))
 async def cmd_news(message: types.Message):
