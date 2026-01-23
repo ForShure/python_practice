@@ -1,18 +1,22 @@
 from django.db import models
 
+class Category(models.Model):
+    name = models.CharField(max_length=64)
+    def __str__(self):
+        return self.name
+
 class Product(models.Model):
     name = models.CharField(max_length=100)                                 # Название (короткий текст)
     price = models.IntegerField()                                           # Цена (целое число)
     description = models.TextField()                                        # Описание (длинный текст)
     image = models.ImageField(upload_to='product/', blank=True, null=True)  # Картинка продука (aaaaaaaaaaa)
-
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True) # Привязка товара к категории
     class Meta:
         verbose_name = "Товар"
         verbose_name_plural = "Товары"
 
     def __str__(self):
         return self.name  # Чтобы в админке писалось название, а не "Product object (1)"
-
 
 class News(models.Model):
     title = models.CharField(max_length=200)    # Название (короткий текст)
@@ -35,8 +39,6 @@ class Order(models.Model):
         verbose_name_plural = "Заказы"
     def __str__(self):
         return self.product.name
-
-
 
 class TelegramUser(models.Model):
     chat_id = models.BigIntegerField(unique=True) # Добавил unique=True (чтоб ID не дублировались)

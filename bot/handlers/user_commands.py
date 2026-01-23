@@ -1,11 +1,12 @@
 import os
 from aiogram import Router, F, types
 from aiogram.filters import Command
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, CallbackQuery, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from django.core.exceptions import ObjectDoesNotExist
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from dotenv import load_dotenv
+from bot.keyboards import categories_keyboard
 
 # Загружаем переменные
 load_dotenv()
@@ -33,61 +34,22 @@ class OrderState(StatesGroup):
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
-    user, created = TelegramUser.objects.get_or_create(
+    user, created = await TelegramUser.objects.aget_or_create(
         chat_id=message.chat.id,
         defaults={'username': message.from_user.username}
     )
-
     kb = [
         [KeyboardButton(text="Каталог"), KeyboardButton(text="🛒 Корзина")],
         [KeyboardButton(text="👤 Профиль")]
     ]
     keyboard = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
-    if created:
-        await message.answer(f"Добро пожаловать 👇", reply_markup=keyboard)
-    else:
-        await message.answer(f"С возвращением 👇", reply_markup=keyboard)
-
+    await message.answer("Добро пожаловать в магазин! 👇", reply_markup=keyboard)
 
 @router.message(F.text == "Каталог")
 @router.message(Command("shop"))
 async def cmd_shop(message: types.Message):
-    products = Product.objects.all()
-
-    if not products:
-        await message.answer("Магазин пуст 🕸")
-        return
-
-    # ВАЖНО: Убедись, что тут твой актуальный адрес на Render
-    BASE_URL = "https://my-shop-bot-service.onrender.com"
-
-    for product in products:
-        text = (
-            f"<b>{product.name}</b>\n"
-            f"💰 Цена: {product.price}\n"
-            f"📜 {product.description}\n"
-        )
-        my_button = InlineKeyboardButton(text="Купить", callback_data=f"buy_{product.id}")
-        my_keyboard = InlineKeyboardMarkup(inline_keyboard=[[my_button]])
-
-        if product.image:
-            # Формируем полную ссылку для Render
-            full_photo_url = f"{BASE_URL}{product.image.url}"
-            try:
-                await message.answer_photo(
-                    photo=full_photo_url,
-                    caption=text,
-                    parse_mode="HTML",
-                    reply_markup=my_keyboard
-                )
-            except Exception as e:
-                await message.answer(f"{text}\n\n⚠️ <i>Фото не грузится</i>", parse_mode="HTML",
-                                     reply_markup=my_keyboard)
-                print(f"Ошибка фото: {e}")
-        else:
-            await message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
-
+    await message.answer("Выберите категорию:", reply_markup=categories_keyboard())
 
 @router.message(F.text == "👤 Профиль")
 async def cmd_profile(message: types.Message):
@@ -221,6 +183,38 @@ async def process_address(message: types.Message, state: FSMContext):
         await message.answer(f"😱 Ошибка при оформлении: {e}")
         print(f"CRITICAL ERROR: {e}")
 
+
+@router.callback_query(F.data.startswith('category_'))
+async def category_click(callback: CallbackQuery):
+    # 1. Получаем ID категории
+    category_id = callback.data.split('_')[1]
+    # 2. Ищем товары этой категории (filter вместо all)
+    products = Product.objects.filter(category_id=category_id)
+    # Сообщаем телеграму, что кнопку нажали (чтобы не крутилась загрузка)
+    await callback.answer()
+    if not products.exists():
+        await callback.message.answer("В этой категории пока пусто 😔")
+        return
+    # 3. Выводим товары (Старый добрый цикл)
+    BASE_URL = "https://my-shop-bot-service.onrender.com"
+    for product in products:
+        text = f"<b>{product.name}</b>\n💰 {product.price}"
+        # Кнопка под товаром
+        my_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Купить", callback_data=f"buy_{product.id}")]
+        ])
+
+        if product.image:
+            full_photo_url = f"{BASE_URL}{product.image.url}"
+            try:
+                await callback.message.answer_photo(
+                    photo=full_photo_url, caption=text,
+                    parse_mode="HTML", reply_markup=my_keyboard
+                )
+            except:
+                await callback.message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
+        else:
+            await callback.message.answer(text, parse_mode="HTML", reply_markup=my_keyboard)
 
 @router.message(Command("news"))
 async def cmd_news(message: types.Message):

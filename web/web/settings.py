@@ -1,6 +1,10 @@
 from pathlib import Path
 import os
-from urllib.parse import urlparse
+import dj_database_url
+from dotenv import load_dotenv
+
+# Загружаем переменные из .env файла
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -55,31 +59,15 @@ TEMPLATES = [
 WSGI_APPLICATION = 'web.wsgi.application'
 
 # Database
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if DATABASE_URL:
-    url = urlparse(DATABASE_URL)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': url.path[1:],
-            'USER': url.username,
-            'PASSWORD': url.password,
-            'HOST': url.hostname,
-            'PORT': url.port,
-        }
-    }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': 'postgres',
-            'USER': 'postgres',
-            'PASSWORD': 'postgres',
-            'HOST': 'db',
-            'PORT': '5432',
-        }
-    }
+# Библиотека сама смотрит в .env на DATABASE_URL.
+# Если находит -> подключается к Render.
+# Если НЕ находит -> создает локальный файл db.sqlite3.
+DATABASES = {
+    'default': dj_database_url.config(
+        default='sqlite:///db.sqlite3',
+        conn_max_age=600
+    )
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
