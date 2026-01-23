@@ -1,5 +1,12 @@
 #!/bin/bash
-# Добавляем папку web в список мест, где Python ищет файлы
-export PYTHONPATH=$PYTHONPATH:./web
-gunicorn web.web.wsgi:application --bind 0.0.0.0:$PORT &
-python main.py
+
+# 1. Запускаем бота (он лежит в корне, поэтому запускаем сразу)
+# Знак & в конце означает "работай в фоне, не блокируй скрипт"
+python main.py &
+
+# 2. Переходим в папку с сайтом (чтобы Django видел папку shop и settings рядом с собой)
+cd web
+
+# 3. Запускаем Gunicorn уже изнутри папки.
+# Теперь путь стал короче: просто web.wsgi
+gunicorn web.wsgi:application --bind 0.0.0.0:$PORT
