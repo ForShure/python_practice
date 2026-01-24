@@ -1,58 +1,56 @@
-import asyncio
-import logging
 import os
 import sys
-
+import asyncio
+import logging
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
-# АСТРОЙКА DJANGO (
+# Настройка Django
 sys.path.append(os.path.join(os.getcwd(), 'web'))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web.settings")
-os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
-
 import django
+
 django.setup()
 
-# ИМПОРТЫ ПОСЛЕ НАСТРОЙКИ
-from bot.handlers.user_commands import router
+# Импорты (теперь их три!)
+from bot.handlers.shop import router as shop_router
+from bot.handlers.cart import router as cart_router
+from bot.handlers.admin import router as admin_router  # <--- НОВОЕ
 
-from django.contrib.auth import get_user_model
+# Загрузка .env
+env_path = os.path.join(os.getcwd(), 'web', '.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    load_dotenv()
+
 
 async def main():
-    # 1. Загружаем переменные
-    load_dotenv(os.path.join(os.getcwd(), 'web', '.env'))
-    token = os.getenv("BOT_TOKEN")
+    TOKEN = os.getenv("TOKEN")
+    if not TOKEN:
+        # Если не нашел TOKEN, попробуем поискать BOT_TOKEN (на всякий случай)
+        TOKEN = os.getenv("BOT_TOKEN")
 
-    # 2. Создаем бота и диспетчер
-    bot = Bot(token=token)
+    if not TOKEN:
+        print("❌ ОШИБКА: Токен не найден! Проверь .env")
+        return
+
+    bot = Bot(token=TOKEN)
     dp = Dispatcher()
 
-    # 3. Подключаем мозги (Роутер)
-    dp.include_router(router)
+    # Подключение роутеров
+    dp.include_router(shop_router)
+    dp.include_router(cart_router)
+    dp.include_router(admin_router)  # <--- НОВОЕ
 
-    # 4. Чистим старые сообщения и запускаем
+    print("🚀 Бот (Магазин + Админка) запущен!")
     await bot.delete_webhook(drop_pending_updates=True)
-    print("🚀 Бот запущен! Можно писать...")
     await dp.start_polling(bot)
 
 
-def create_admin():
-    User = get_user_model()
-    if not User.objects.filter(username='admin').exists():
-        User.objects.create_superuser('admin', 'admin@example.com', 'admin_pass_123')
-        print("✅ Суперюзер создан!")
-    else:
-        print("✅ Суперюзер уже есть.")
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-
-    # Сначала создаем админа, потом запускаем бота
-    create_admin()
-
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Бот выключен")
+        print("🛑 Бот остановлен.")
